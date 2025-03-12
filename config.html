@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configurador de Chat Asistente</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            color: #333;
+        }
+        h1 {
+            color: #075e54;
+            border-bottom: 2px solid #075e54;
+            padding-bottom: 10px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        button {
+            background-color: #075e54;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        .result {
+            margin-top: 30px;
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 4px;
+            display: none;
+        }
+        .code-box {
+            background-color: #f8f8f8;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 10px;
+            position: relative;
+        }
+        .copy-btn {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background-color: #e0e0e0;
+            border: none;
+            border-radius: 4px;
+            padding: 5px 10px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .preview {
+            width: 100%;
+            height: 350px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 20px;
+            background-color: #e0e0e0;
+            cursor: pointer;
+            border-radius: 4px 4px 0 0;
+            margin-right: 5px;
+        }
+        .tab.active {
+            background-color: #075e54;
+            color: white;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <h1>Configurador de Chat Asistente</h1>
+    <p>Configura tu chat asistente y genera el código para insertarlo en tu web o compartir como enlace.</p>
+
+    <div class="form-group">
+        <label for="webhook-url">URL de tu Webhook de Make:</label>
+        <input type="text" id="webhook-url" placeholder="https://hook.eu1.make.com/tu_webhook_aqui" required>
+    </div>
+
+    <div class="form-group">
+        <label for="header-color">Color de Cabecera:</label>
+        <input type="color" id="header-color" value="#075e54">
+    </div>
+
+    <div class="form-group">
+        <label for="header-text">Texto de Cabecera:</label>
+        <input type="text" id="header-text" value="Asistente Virtual">
+    </div>
+
+    <div class="form-group">
+        <label for="chat-style">Estilo del Chat:</label>
+        <select id="chat-style">
+            <option value="embedded">Embebido (dentro de tu web)</option>
+            <option value="floating">Flotante (botón fijo en esquina)</option>
+        </select>
+    </div>
+
+    <button id="generate-btn">Generar Chat</button>
+
+    <div class="result" id="result">
+        <h2>Tu Chat Está Listo</h2>
+        
+        <div class="tabs">
+            <div class="tab active" data-tab="code">Código para Insertar</div>
+            <div class="tab" data-tab="link">Enlace para Compartir</div>
+            <div class="tab" data-tab="preview">Vista Previa</div>
+        </div>
+        
+        <div class="tab-content active" data-tab="code">
+            <p>Copia y pega este código en tu sitio web:</p>
+            <div class="code-box">
+                <pre id="embed-code"></pre>
+                <button class="copy-btn" data-target="embed-code">Copiar</button>
+            </div>
+        </div>
+        
+        <div class="tab-content" data-tab="link">
+            <p>Comparte este enlace con tus clientes:</p>
+            <div class="code-box">
+                <input type="text" id="share-link" readonly>
+                <button class="copy-btn" data-target="share-link">Copiar</button>
+            </div>
+        </div>
+        
+        <div class="tab-content" data-tab="preview">
+            <iframe id="preview-frame" class="preview"></iframe>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const generateBtn = document.getElementById('generate-btn');
+            const result = document.getElementById('result');
+            const embedCode = document.getElementById('embed-code');
+            const shareLink = document.getElementById('share-link');
+            const previewFrame = document.getElementById('preview-frame');
+            const tabs = document.querySelectorAll('.tab');
+            const tabContents = document.querySelectorAll('.tab-content');
+            const copyBtns = document.querySelectorAll('.copy-btn');
+            
+            // Base URL para el chat - Reemplazar con tu URL real
+            // Si estás usando GitHub Pages, será algo como: https://tuusuario.github.io/tu-repo/chat.html
+            const baseURL = window.location.href.replace('config.html', 'chat.html');
+            
+            // Cambiar entre pestañas
+            tabs.forEach(tab => {
+                tab.addEventListener('click', function() {
+                    const tabTarget = this.getAttribute('data-tab');
+                    
+                    // Actualizar pestañas
+                    tabs.forEach(t => t.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    // Actualizar contenido
+                    tabContents.forEach(content => {
+                        if (content.getAttribute('data-tab') === tabTarget) {
+                            content.classList.add('active');
+                        } else {
+                            content.classList.remove('active');
+                        }
+                    });
+                });
+            });
+            
+            // Funcionalidad de copiar al portapapeles
+            copyBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const targetId = this.getAttribute('data-target');
+                    const targetElement = document.getElementById(targetId);
+                    
+                    // Seleccionar y copiar texto
+                    if (targetElement.tagName === 'INPUT') {
+                        targetElement.select();
+                        document.execCommand('copy');
+                    } else {
+                        const range = document.createRange();
+                        range.selectNode(targetElement);
+                        window.getSelection().removeAllRanges();
+                        window.getSelection().addRange(range);
+                        document.execCommand('copy');
+                        window.getSelection().removeAllRanges();
+                    }
+                    
+                    // Cambiar texto del botón temporalmente
+                    const originalText = this.textContent;
+                    this.textContent = '¡Copiado!';
+                    setTimeout(() => {
+                        this.textContent = originalText;
+                    }, 1500);
+                });
+            });
+            
+            // Generar código y enlace
+            generateBtn.addEventListener('click', function() {
+                const webhookUrl = document.getElementById('webhook-url').value.trim();
+                if (!webhookUrl) {
+                    alert('Por favor, introduce la URL de tu webhook de Make');
+                    return;
+                }
+                
+                const headerColor = document.getElementById('header-color').value;
+                const headerText = document.getElementById('header-text').value;
+                const chatStyle = document.getElementById('chat-style').value;
+                
+                // Crear URL con parámetros
+                const params = new URLSearchParams();
+                params.set('webhook', encodeURIComponent(webhookUrl));
+                params.set('headerColor', encodeURIComponent(headerColor));
+                params.set('headerText', encodeURIComponent(headerText));
+                
+                const chatUrl = `${baseURL}?${params.toString()}`;
+                
+                // Generar código para embeber
+                let code = '';
+                if (chatStyle === 'embedded') {
+                    code = `<iframe src="${chatUrl}" width="350" height="500" style="border: 1px solid #ccc; border-radius: 10px;"></iframe>`;
+                } else {
+                    code = `<!-- Código del Chat Flotante -->
+<script>
+(function() {
+  // Crear contenedor del iframe
+  const chatContainer = document.createElement('div');
+  chatContainer.id = 'asistente-chat-container';
+  chatContainer.style.position = 'fixed';
+  chatContainer.style.bottom = '20px';
+  chatContainer.style.right = '20px';
+  chatContainer.style.zIndex = '9999';
+  chatContainer.style.boxShadow = '0 5px 15px rgba(0,0,0,0.2)';
+  chatContainer.style.borderRadius = '10px';
+  chatContainer.style.overflow = 'hidden';
+  chatContainer.style.width = '350px';
+  chatContainer.style.height = '500px';
+  chatContainer.style.display = 'none'; // Inicia oculto
+
+  // Crear botón de chat
+  const chatButton = document.createElement('div');
+  chatButton.id = 'asistente-chat-button';
+  chatButton.innerHTML = '💬';
+  chatButton.style.position = 'fixed';
+  chatButton.style.bottom = '20px';
+  chatButton.style.right = '20px';
+  chatButton.style.width = '60px';
+  chatButton.style.height = '60px';
+  chatButton.style.borderRadius = '50%';
+  chatButton.style.backgroundColor = '${headerColor}';
+  chatButton.style.color = 'white';
+  chatButton.style.display = 'flex';
+  chatButton.style.justifyContent = 'center';
+  chatButton.style.alignItems = 'center';
+  chatButton.style.fontSize = '30px';
+  chatButton.style.cursor = 'pointer';
+  chatButton.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
+  chatButton.style.zIndex = '10000';
+
+  // Crear iframe
+  const chatIframe = document.createElement('iframe');
+  chatIframe.src = '${chatUrl}';
+  chatIframe.style.width = '100%';
+  chatIframe.style.height = '100%';
+  chatIframe.style.border = 'none';
+  chatIframe.title = '${headerText}';
+  
+  // Agregar iframe al contenedor
+  chatContainer.appendChild(chatIframe);
+  
+  // Agregar elementos al DOM
+  document.body.appendChild(chatButton);
+  document.body.appendChild(chatContainer);
+
+  // Manejar clicks en el botón
+  chatButton.addEventListener('click', function() {
+    if (chatContainer.style.display === 'none') {
+      chatContainer.style.display = 'block';
+      chatButton.innerHTML = '✖';
+      chatButton.style.bottom = '480px';
+    } else {
+      chatContainer.style.display = 'none';
+      chatButton.innerHTML = '💬';
+      chatButton.style.bottom = '20px';
+    }
+  });
+})();
+<\/script>
+`;
+                }
+                
+                // Actualizar elementos
+                embedCode.textContent = code;
+                shareLink.value = chatUrl;
+                previewFrame.src = chatUrl;
+                
+                // Mostrar resultado
+                result.style.display = 'block';
+                
+                // Scroll al resultado
+                result.scrollIntoView({ behavior: 'smooth' });
+            });
+        });
+    </script>
+</body>
+</html>
