@@ -4,9 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Asistente Virtual</title>
-    <style id="dynamic-styles">
-        /* Los estilos dinámicos se insertarán aquí */
-    </style>
     <style>
         body, html {
             margin: 0;
@@ -20,7 +17,6 @@
             height: 100%;
             display: flex;
             flex-direction: column;
-            font-family: Arial, sans-serif;
         }
         .chat-header {
             background-color: #075e54;
@@ -105,6 +101,26 @@
                 opacity: 1;
             }
         }
+        .debug-panel {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            color: lime;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            z-index: 1000;
+            display: none;
+        }
+        .error-message {
+            background-color: #ffcccc;
+            color: #cc0000;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -127,35 +143,42 @@
             <button id="send-button">➤</button>
         </div>
     </div>
+    <div class="debug-panel" id="debug-panel"></div>
 
     <script>
-        // Función para obtener parámetros de la URL
-        function getURLParameter(name) {
-            const urlParams = new URLSearchParams(window.location.search);
-            return urlParams.get(name);
-        }
-        
         document.addEventListener('DOMContentLoaded', function() {
+            // Modo debug (para desarrollo)
+            const debugMode = false;
+            const debugPanel = document.getElementById('debug-panel');
+            
+            if (debugMode) {
+                debugPanel.style.display = 'block';
+            }
+            
+            function logDebug(message) {
+                if (debugMode) {
+                    console.log(message);
+                    debugPanel.textContent = message;
+                }
+            }
+            
+            // Obtener parámetros de la URL
+            function getURLParameter(name) {
+                const urlParams = new URLSearchParams(window.location.search);
+                return urlParams.get(name);
+            }
+            
             // Aplicar personalización desde URL
             const headerColor = getURLParameter('headerColor') || '#075e54';
             const headerText = getURLParameter('headerText') || 'Asistente Virtual';
-            const userBubbleColor = getURLParameter('userColor') || '#dcf8c6';
-            const botBubbleColor = getURLParameter('botColor') || 'white';
             
             // Webhook URL - IMPORTANTE
             let webhookUrl = getURLParameter('webhook');
             if (!webhookUrl) {
-                // Si no hay webhook en la URL, mostramos un mensaje de error
-                document.getElementById('chat-messages').innerHTML = `
-                    <div class="message bot-message" style="background-color: #ffcccc;">
-                        <strong>Error de configuración:</strong> No se ha proporcionado una URL de webhook válida.
-                        Por favor, configura este chat usando la página de configuración.
-                    </div>
-                `;
-                return; // Detenemos la ejecución
+                showError("No se ha proporcionado una URL de webhook válida. Por favor, configura este chat usando la página de configuración.");
+                return;
             }
             
-            // Intentamos decodificar por si acaso ya viene codificada
             try {
                 webhookUrl = decodeURIComponent(webhookUrl);
             } catch (e) {
@@ -163,21 +186,22 @@
             }
             
             // Aplicar personalización
-            document.getElementById('chat-header').textContent = decodeURIComponent(headerText);
+            document.getElementById('chat-header').textContent = decodeURIComponent(headerText || 'Asistente Virtual');
             document.getElementById('chat-header').style.backgroundColor = headerColor;
             document.getElementById('send-button').style.backgroundColor = headerColor;
-            
-            // Estilos dinámicos para los colores de los mensajes
-            const dynamicStyles = document.getElementById('dynamic-styles');
-            dynamicStyles.textContent = `
-                .user-message { background-color: ${userBubbleColor}; }
-                .bot-message { background-color: ${botBubbleColor}; }
-            `;
             
             const chatMessages = document.getElementById('chat-messages');
             const userInput = document.getElementById('user-input');
             const sendButton = document.getElementById('send-button');
             const typingIndicator = document.getElementById('typing-indicator');
+            
+            // Función para mostrar errores
+            function showError(message) {
+                const errorDiv = document.createElement('div');
+                errorDiv.classList.add('error-message');
+                errorDiv.textContent = message;
+                chatMessages.appendChild(errorDiv);
+            }
             
             // Función para añadir mensajes al chat
             function addMessage(message, isUser) {
@@ -193,68 +217,94 @@
                 chatMessages.scrollTop = chatMessages.scrollHeight;
             }
             
-            // Función para mostrar el indicador de escritura
+            // Funciones para el indicador de escritura
             function showTypingIndicator() {
                 typingIndicator.style.display = 'block';
                 chatMessages.scrollTop = chatMessages.scrollHeight;
             }
             
-            // Función para ocultar el indicador de escritura
             function hideTypingIndicator() {
                 typingIndicator.style.display = 'none';
             }
             
-            // Generar un ID de sesión único
-            function generateSessionId() {
-                return 'session_' + Math.random().toString(36).substring(2, 15);
-            }
+            // ID de sesión única
+            const sessionId = 'session_' + Math.random().toString(36).substring(2, 15);
             
-            // ID de sesión única para esta conversación
-            const sessionId = generateSessionId();
-            
-            // Función para enviar mensaje al webhook
+            // Función para enviar mensaje al webhook usando un proxy CORS
             async function sendToWebhook(message) {
                 try {
                     showTypingIndicator();
+                    logDebug("Enviando mensaje a: " + webhookUrl);
                     
-                    // Formato específico para Make
-                    const response = await fetch(webhookUrl, {
+                    // Define el objeto de datos
+                    const messageData = {
+                        message: message,
+                        timestamp: new Date().toISOString(),
+                        sessionId: sessionId
+                    };
+                    
+                    // Intenta primero directamente
+                    try {
+                        const response = await fetch(webhookUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify(messageData)
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            processResponse(data);
+                            return;
+                        }
+                        logDebug("Intento directo falló, probando con proxy...");
+                    } catch (directError) {
+                        logDebug("Error directo: " + directError.message);
+                        // Continuar con la próxima estrategia
+                    }
+                    
+                    // Intenta con un proxy CORS gratuito
+                    // Nota: los proxies gratuitos como cors-anywhere requieren registro o tienen límites
+                    const corsProxyUrl = 'https://corsproxy.io/?';
+                    
+                    const proxyResponse = await fetch(corsProxyUrl + encodeURIComponent(webhookUrl), {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                         },
-                        body: JSON.stringify({
-                            data: {
-                                message: message,
-                                timestamp: new Date().toISOString(),
-                                sessionId: sessionId,
-                                source: window.location.href
-                            }
-                        }),
+                        body: JSON.stringify(messageData)
                     });
                     
-                    if (!response.ok) {
-                        throw new Error('Error en la respuesta del webhook');
+                    if (!proxyResponse.ok) {
+                        throw new Error(`Error HTTP: ${proxyResponse.status}`);
                     }
                     
-                    const data = await response.json();
-                    hideTypingIndicator();
-                    
-                    // Añadir respuesta del bot
-                    if (data && data.response) {
-                        addMessage(data.response, false);
-                    } else if (data && data.data && data.data.response) {
-                        // Manera alternativa en que Make podría devolver datos
-                        addMessage(data.data.response, false);
-                    } else {
-                        console.log('Respuesta recibida:', data);
-                        addMessage('Lo siento, ocurrió un error al procesar tu mensaje.', false);
-                    }
+                    const data = await proxyResponse.json();
+                    processResponse(data);
                     
                 } catch (error) {
                     console.error('Error:', error);
                     hideTypingIndicator();
-                    addMessage('Lo siento, no pude conectar con el servicio. Por favor, intenta más tarde.', false);
+                    addMessage(`Lo siento, ocurrió un error: ${error.message}. Por favor, verifica la configuración del webhook.`, false);
+                }
+            }
+            
+            // Procesar la respuesta
+            function processResponse(data) {
+                hideTypingIndicator();
+                logDebug("Respuesta recibida: " + JSON.stringify(data));
+                
+                // Intentar extraer la respuesta de diferentes formatos posibles
+                if (data && typeof data.response === 'string') {
+                    addMessage(data.response, false);
+                } else if (data && data.data && typeof data.data.response === 'string') {
+                    addMessage(data.data.response, false);
+                } else if (typeof data === 'string') {
+                    addMessage(data, false);
+                } else {
+                    console.log("Respuesta completa:", data);
+                    addMessage("Recibí una respuesta, pero no puedo interpretarla correctamente. Contacta al administrador.", false);
                 }
             }
             
@@ -279,6 +329,8 @@
                     }
                 }
             });
+            
+            logDebug("Chat inicializado con webhook: " + webhookUrl);
         });
     </script>
 </body>
