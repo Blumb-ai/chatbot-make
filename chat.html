@@ -101,18 +101,6 @@
                 opacity: 1;
             }
         }
-        .debug-panel {
-            position: fixed;
-            bottom: 10px;
-            right: 10px;
-            background: rgba(0,0,0,0.7);
-            color: lime;
-            padding: 5px 10px;
-            border-radius: 5px;
-            font-size: 12px;
-            z-index: 1000;
-            display: none;
-        }
         .error-message {
             background-color: #ffcccc;
             color: #cc0000;
@@ -129,9 +117,7 @@
             Asistente Virtual
         </div>
         <div class="chat-messages" id="chat-messages">
-            <div class="message bot-message">
-                ¡Hola! ¿En qué puedo ayudarte hoy?
-            </div>
+            <!-- El mensaje de bienvenida se insertará aquí mediante JavaScript -->
             <div class="typing-indicator" id="typing-indicator">
                 <span></span>
                 <span></span>
@@ -143,26 +129,10 @@
             <button id="send-button">➤</button>
         </div>
     </div>
-    <div class="debug-panel" id="debug-panel"></div>
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Modo debug (para desarrollo)
-            const debugMode = false;
-            const debugPanel = document.getElementById('debug-panel');
-            
-            if (debugMode) {
-                debugPanel.style.display = 'block';
-            }
-            
-            function logDebug(message) {
-                if (debugMode) {
-                    console.log(message);
-                    debugPanel.textContent = message;
-                }
-            }
-            
-            // Obtener parámetros de la URL
+            // Función para obtener parámetros de la URL
             function getURLParameter(name) {
                 const urlParams = new URLSearchParams(window.location.search);
                 return urlParams.get(name);
@@ -171,6 +141,7 @@
             // Aplicar personalización desde URL
             const headerColor = getURLParameter('headerColor') || '#075e54';
             const headerText = getURLParameter('headerText') || 'Asistente Virtual';
+            const welcomeMessage = getURLParameter('welcomeMessage') || '¡Hola! ¿En qué puedo ayudarte hoy?';
             
             // Webhook URL - IMPORTANTE
             let webhookUrl = getURLParameter('webhook');
@@ -185,7 +156,7 @@
                 console.error("Error decodificando webhook URL:", e);
             }
             
-            // Aplicar personalización
+            // Aplicar personalización 
             document.getElementById('chat-header').textContent = decodeURIComponent(headerText || 'Asistente Virtual');
             document.getElementById('chat-header').style.backgroundColor = headerColor;
             document.getElementById('send-button').style.backgroundColor = headerColor;
@@ -194,6 +165,12 @@
             const userInput = document.getElementById('user-input');
             const sendButton = document.getElementById('send-button');
             const typingIndicator = document.getElementById('typing-indicator');
+            
+            // Añadir el mensaje de bienvenida
+            const welcomeDiv = document.createElement('div');
+            welcomeDiv.classList.add('message', 'bot-message');
+            welcomeDiv.textContent = decodeURIComponent(welcomeMessage);
+            chatMessages.insertBefore(welcomeDiv, typingIndicator);
             
             // Función para mostrar errores
             function showError(message) {
@@ -230,81 +207,57 @@
             // ID de sesión única
             const sessionId = 'session_' + Math.random().toString(36).substring(2, 15);
             
-            // Función para enviar mensaje al webhook usando un proxy CORS
+            // Función para enviar mensaje al webhook
             async function sendToWebhook(message) {
+                showTypingIndicator();
+                
                 try {
-                    showTypingIndicator();
-                    logDebug("Enviando mensaje a: " + webhookUrl);
-                    
-                    // Define el objeto de datos
-                    const messageData = {
-                        message: message,
-                        timestamp: new Date().toISOString(),
-                        sessionId: sessionId
+                    // Crea un objeto con mensaje simple para Make
+                    const postData = {
+                        message: message
                     };
                     
-                    // Intenta primero directamente
-                    try {
-                        const response = await fetch(webhookUrl, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify(messageData)
-                        });
+                    console.log("Enviando a webhook:", webhookUrl);
+                    
+                    // Usar XMLHttpRequest en lugar de fetch para mayor compatibilidad
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('POST', webhookUrl, true);
+                    xhr.setRequestHeader('Content-Type', 'application/json');
+                    
+                    xhr.onload = function() {
+                        hideTypingIndicator();
                         
-                        if (response.ok) {
-                            const data = await response.json();
-                            processResponse(data);
-                            return;
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            try {
+                                const data = JSON.parse(xhr.responseText);
+                                console.log("Respuesta recibida:", data);
+                                
+                                // Buscar la respuesta en varios formatos posibles
+                                if (data && typeof data.response === 'string') {
+                                    addMessage(data.response, false);
+                                } else if (data && data.data && typeof data.data.response === 'string') {
+                                    addMessage(data.data.response, false);
+                                } else {
+                                    showError("Respuesta recibida en formato inesperado. Por favor, verifica la configuración del webhook.");
+                                }
+                            } catch (parseError) {
+                                showError("Error al procesar la respuesta: " + parseError.message);
+                            }
+                        } else {
+                            showError(`Error del servidor (${xhr.status}): Verifica la configuración del webhook en Make.`);
                         }
-                        logDebug("Intento directo falló, probando con proxy...");
-                    } catch (directError) {
-                        logDebug("Error directo: " + directError.message);
-                        // Continuar con la próxima estrategia
-                    }
+                    };
                     
-                    // Intenta con un proxy CORS gratuito
-                    // Nota: los proxies gratuitos como cors-anywhere requieren registro o tienen límites
-                    const corsProxyUrl = 'https://corsproxy.io/?';
+                    xhr.onerror = function() {
+                        hideTypingIndicator();
+                        showError("Error de red: No se pudo conectar con el webhook. Esto puede deberse a restricciones CORS.");
+                    };
                     
-                    const proxyResponse = await fetch(corsProxyUrl + encodeURIComponent(webhookUrl), {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify(messageData)
-                    });
-                    
-                    if (!proxyResponse.ok) {
-                        throw new Error(`Error HTTP: ${proxyResponse.status}`);
-                    }
-                    
-                    const data = await proxyResponse.json();
-                    processResponse(data);
+                    xhr.send(JSON.stringify(postData));
                     
                 } catch (error) {
-                    console.error('Error:', error);
                     hideTypingIndicator();
-                    addMessage(`Lo siento, ocurrió un error: ${error.message}. Por favor, verifica la configuración del webhook.`, false);
-                }
-            }
-            
-            // Procesar la respuesta
-            function processResponse(data) {
-                hideTypingIndicator();
-                logDebug("Respuesta recibida: " + JSON.stringify(data));
-                
-                // Intentar extraer la respuesta de diferentes formatos posibles
-                if (data && typeof data.response === 'string') {
-                    addMessage(data.response, false);
-                } else if (data && data.data && typeof data.data.response === 'string') {
-                    addMessage(data.data.response, false);
-                } else if (typeof data === 'string') {
-                    addMessage(data, false);
-                } else {
-                    console.log("Respuesta completa:", data);
-                    addMessage("Recibí una respuesta, pero no puedo interpretarla correctamente. Contacta al administrador.", false);
+                    showError("Error al enviar el mensaje: " + error.message);
                 }
             }
             
@@ -329,8 +282,6 @@
                     }
                 }
             });
-            
-            logDebug("Chat inicializado con webhook: " + webhookUrl);
         });
     </script>
 </body>
